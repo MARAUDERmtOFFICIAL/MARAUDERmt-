@@ -597,6 +597,21 @@
   .chat-input-row button:not(:disabled):hover{background:#fff;}
   .chat-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0);z-index:2999;pointer-events:none;transition:background .22s ease;}
   .chat-backdrop.open{pointer-events:auto;}
+
+  /* ---- mode switch: OPEN CHANNEL vs MARAUDER COMMS, sits above the title ---- */
+  .chat-mode-row{
+    display:flex; align-items:center; justify-content:flex-end; gap:8px;
+    padding:8px 14px; border-bottom:1px solid var(--red-mid);
+    background:#0a0000;
+  }
+  .chat-mode-static{font-size:9px; letter-spacing:1px; color:var(--dim-red); text-transform:uppercase; margin-right:auto;}
+  .chat-mode-switch .global-map-sync-label{color:var(--dim-red);}
+  .chat-comms-view{flex:1; display:none; min-height:0;}
+  .chat-comms-view.active{display:flex;}
+  .chat-comms-frame{flex:1; width:100%; border:0; background:#000;}
+  .chat-openchannel-view{flex:1; display:flex; flex-direction:column; min-height:0;}
+  .chat-openchannel-view.hidden{display:none;}
+
 </style>
 
 
@@ -3615,30 +3630,45 @@
 <!-- LIVE CHAT PANEL -->
 <div class="chat-backdrop" id="chatBackdrop"></div>
 <div class="chat-panel" id="chatPanel" role="dialog" aria-label="Live chat" aria-hidden="true">
+  <div class="chat-mode-row">
+    <span class="chat-mode-static">CHANNEL MODE</span>
+    <label class="global-map-switch chat-mode-switch" id="commsModeSwitch" title="Switch to encrypted Marauder Comms link">
+      <input type="checkbox" id="commsModeToggle" aria-label="Switch between open channel and Marauder Comms">
+      <span class="global-map-sync-slider" aria-hidden="true"></span>
+      <span class="global-map-sync-label" id="commsModeLabel">MARAUDER COMMS</span>
+    </label>
+  </div>
   <div class="chat-panel-head">
-    <span class="bright">MARAUDERmt // OPEN CHANNEL</span>
+    <span class="bright" id="chatPanelTitle">MARAUDERmt // OPEN CHANNEL</span>
     <button type="button" class="chat-wipe" id="chatWipeBtn" aria-label="Wipe chat log" title="Wipe chat log">WIPE</button>
     <button type="button" class="chat-close" id="chatCloseBtn" aria-label="Close chat">&times;</button>
   </div>
-  <div class="chat-status" id="chatStatus">LOCAL DEMO MODE — VISIBLE ON THIS BROWSER ONLY</div>
 
-  <div class="chat-username-row" id="chatUsernameRow">
-    <input type="text" id="chatUsernameInput" placeholder="PICK A CALLSIGN…" maxlength="20" autocomplete="off">
-    <button type="button" id="chatUsernameSave">SET</button>
-  </div>
-  <div class="chat-username-current" id="chatUsernameCurrent">
-    TRANSMITTING AS <span class="callsign" id="chatUsernameLabel"></span>
-    <button type="button" id="chatUsernameChange">change</button>
+  <div class="chat-openchannel-view" id="openChannelView">
+    <div class="chat-status" id="chatStatus">LOCAL DEMO MODE — VISIBLE ON THIS BROWSER ONLY</div>
+
+    <div class="chat-username-row" id="chatUsernameRow">
+      <input type="text" id="chatUsernameInput" placeholder="PICK A CALLSIGN…" maxlength="20" autocomplete="off">
+      <button type="button" id="chatUsernameSave">SET</button>
+    </div>
+    <div class="chat-username-current" id="chatUsernameCurrent">
+      TRANSMITTING AS <span class="callsign" id="chatUsernameLabel"></span>
+      <button type="button" id="chatUsernameChange">change</button>
+    </div>
+
+    <div class="chat-messages" id="chatMessages">
+      <div class="chat-empty" id="chatEmptyNote">No transmissions yet. Say something.</div>
+    </div>
+
+    <form class="chat-input-row" id="chatForm">
+      <input type="text" id="chatMessageInput" placeholder="TRANSMIT MESSAGE…" maxlength="500" autocomplete="off" disabled>
+      <button type="submit" id="chatSendBtn" disabled>SEND</button>
+    </form>
   </div>
 
-  <div class="chat-messages" id="chatMessages">
-    <div class="chat-empty" id="chatEmptyNote">No transmissions yet. Say something.</div>
+  <div class="chat-comms-view" id="marauderCommsView">
+    <iframe class="chat-comms-frame" id="marauderCommsFrame" title="Marauder Comms — encrypted channel" loading="lazy"></iframe>
   </div>
-
-  <form class="chat-input-row" id="chatForm">
-    <input type="text" id="chatMessageInput" placeholder="TRANSMIT MESSAGE…" maxlength="500" autocomplete="off" disabled>
-    <button type="submit" id="chatSendBtn" disabled>SEND</button>
-  </form>
 </div>
 
 <script id="maraudermt-chat">
@@ -3687,6 +3717,30 @@
   const messageInput = document.getElementById('chatMessageInput');
   const sendBtn = document.getElementById('chatSendBtn');
   if (!toggle || !panel) return;
+
+  // ---- CHANNEL MODE SWITCH: OPEN CHANNEL (this panel) vs MARAUDER COMMS
+  // (the standalone encrypted app, embedded in an iframe and loaded only
+  // once the person actually flips to it — no cipher/broker connection
+  // is opened until then). ----
+  const commsToggle = document.getElementById('commsModeToggle');
+  const openChannelView = document.getElementById('openChannelView');
+  const commsView = document.getElementById('marauderCommsView');
+  const commsFrame = document.getElementById('marauderCommsFrame');
+  const panelTitle = document.getElementById('chatPanelTitle');
+  if (commsToggle && openChannelView && commsView && commsFrame && panelTitle) {
+    commsToggle.addEventListener('change', function () {
+      const commsMode = commsToggle.checked;
+      openChannelView.classList.toggle('hidden', commsMode);
+      commsView.classList.toggle('active', commsMode);
+      panelTitle.textContent = commsMode ? 'MARAUDERmt // SECURE LINK' : 'MARAUDERmt // OPEN CHANNEL';
+      if (wipeBtn) wipeBtn.style.display = commsMode ? 'none' : '';
+      if (commsMode && !commsFrame.src) {
+        commsFrame.src = 'marauder-comms.html';
+      }
+      if (commsMode) messageInput && messageInput.blur();
+    });
+  }
+
 
   const USERNAME_KEY = 'maraudermt_chat_username';
   const LOCAL_MESSAGES_KEY = 'maraudermt_chat_messages_v1';
